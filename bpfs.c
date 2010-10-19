@@ -1281,6 +1281,15 @@ static void discover_tree_allocations(struct bpfs_tree_root *root)
 	}
 }
 
+static void tree_complete_shrink(struct bpfs_tree_root *root)
+{
+	if (tree_height(NBLOCKS_FOR_NBYTES(root->nbytes)) < tree_root_height(root))
+	{
+		// TODO: implement
+		fprintf(stderr, "TODO: need to complete a tree shink\n");
+	}
+}
+
 static void discover_inode_allocations(uint64_t ino, bool mounting);
 
 struct mount_ino {
@@ -1356,6 +1365,7 @@ static void discover_inode_allocations(uint64_t ino, bool mounting)
 	if (!was_set)
 	{
 		// TODO: combine the inode and block discovery loops?
+		tree_complete_shrink(&inode->root);
 		discover_tree_allocations(&inode->root);
 		if (is_dir)
 			xcall(crawl_data(ino, 0, BPFS_EOF, COMMIT_NONE,
