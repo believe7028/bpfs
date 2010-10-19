@@ -106,6 +106,7 @@ struct bpfs_super
 
 struct bpfs_indir_block
 {
+	// TODO: would 32b addresses help significantly?
 	uint64_t addr[BPFS_BLOCKNOS_PER_INDIR];
 };
 
@@ -116,6 +117,7 @@ struct bpfs_time
 //	uint32_t ns;
 };
 
+// TODO: could shrink bpfs_inode from 128 to 64 bytes
 struct bpfs_inode
 {
 	uint64_t generation;
@@ -123,7 +125,7 @@ struct bpfs_inode
 	uint32_t gid;
 	uint32_t mode;
 	uint32_t nlinks; // valid at mount iff bpfs_super.ephemeral_valid
-	uint64_t flags;
+	uint64_t flags; // unused
 	struct bpfs_tree_root root;
 	struct bpfs_time atime;
 	struct bpfs_time ctime;
@@ -138,6 +140,9 @@ struct bpfs_dirent
 {
 	uint64_t ino;
 	uint16_t rec_len;
+	// TODO: Is 'file_type' helpful?
+	// - Increased locality (at the cost of slight dirent size increase)
+	// - Easier to use than looking up the inode? (weak reason)
 	uint8_t file_type;
 	uint8_t name_len;
 	char name[];
