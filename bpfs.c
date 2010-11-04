@@ -1233,6 +1233,58 @@ uint64_t tree_root_addr(const struct bpfs_tree_root *root)
 
 
 //
+// directory read
+
+struct read_dir_data {
+	int (*callback)(uint64_t blockoff, unsigned off,
+                    const struct bpfs_dirent *dirent, void *user);
+	void *user;
+};
+
+static int callback_read_dir(uint64_t blockoff, char *block,
+                             unsigned off, unsigned size,
+                             unsigned valid, uint64_t crawl_start,
+                             enum commit commit, void *rdd_void,
+                             uint64_t *blockno)
+{
+	const struct read_dir_data *rdd = (const struct read_dir_data*) rdd_void;
+	unsigned end = off + size;
+
+	while (off + BPFS_DIRENT_MIN_LEN <= end)
+	{
+		struct bpfs_dirent *dirent = (struct bpfs_dirent*) (block + off);
+
+		assert(!(off % BPFS_DIRENT_ALIGN));
+
+		if (!dirent->rec_len)
+		{
+			// end of directory entries in this block
+			break;
+		}
+		off += dirent->rec_len;
+		xassert(off <= BPFS_BLOCK_SIZE); // x in assert for discover_inodes
+
+		if (dirent->ino != BPFS_INO_INVALID)
+		{
+			int r;
+
+			assert(dirent->rec_len >= BPFS_DIRENT_LEN(dirent->name_len));
+
+			r = rdd->callback(blockoff, off, dirent, rdd->user);
+			if (r)
+				return r;
+		}
+	}
+	return 0;
+}
+
+static int read_dir(uint64_t ino, uint64_t off, struct read_dir_data *rdd)
+{
+	return crawl_data(ino, off, BPFS_EOF, COMMIT_NONE, callback_read_dir, rdd);
+}
+
+
+//
 // block and inode allocation discovery
 
 static void discover_indir_allocations(struct bpfs_indir_block *indir,
@@ -1297,39 +1349,22 @@ struct mount_ino {
 	uint64_t ino;
 };
 
-static int callback_discover_inodes(uint64_t blockoff, char *block,
-                                    unsigned off, unsigned size,
-                                    unsigned valid, uint64_t crawl_start,
-                                    enum commit commit, void *mi_void,
-                                    uint64_t *blockno)
+static int read_dir_callback_discover_inodes(uint64_t blockoff, unsigned off,
+                                             const struct bpfs_dirent *dirent,
+                                             void *mi_void)
 {
 	const struct mount_ino *mi = (const struct mount_ino*) mi_void;
-	unsigned end = off + size;
 
-	while (off + BPFS_DIRENT_MIN_LEN <= end)
+	discover_inode_allocations(dirent->ino, mi->mounting);
+
+	// Account for child's ".." dirent (not stored on disk):
+	if (mi->mounting && !bpfs_super->ephemeral_valid
+		&& dirent->file_type == BPFS_TYPE_DIR)
 	{
-		struct bpfs_dirent *dirent = (struct bpfs_dirent*) (block + off);
-		if (!dirent->rec_len)
-		{
-			// end of directory entries in this block
-			break;
-		}
-		off += dirent->rec_len;
-		xassert(off <= BPFS_BLOCK_SIZE);
-
-		if (dirent->ino != BPFS_INO_INVALID)
-		{
-			discover_inode_allocations(dirent->ino, mi->mounting);
-
-			// Account for child's ".." dirent (not stored on disk):
-			if (mi->mounting && !bpfs_super->ephemeral_valid
-			    && dirent->file_type == BPFS_TYPE_DIR)
-			{
-				get_inode(mi->ino)->nlinks++;
-				xassert(get_inode(mi->ino)->nlinks);
-			}
-		}
+		get_inode(mi->ino)->nlinks++;
+		xassert(get_inode(mi->ino)->nlinks);
 	}
+
 	return 0;
 }
 
@@ -1337,6 +1372,7 @@ static void discover_inode_allocations(uint64_t ino, bool mounting)
 {
 	struct bpfs_inode *inode = get_inode(ino);
 	struct mount_ino mi = {.mounting = mounting, .ino = ino};
+	struct read_dir_data rdd = {read_dir_callback_discover_inodes, &mi};
 	bool is_dir = BPFS_S_ISDIR(inode->mode);
 	bool was_set;
 
@@ -1368,8 +1404,7 @@ static void discover_inode_allocations(uint64_t ino, bool mounting)
 		tree_complete_shrink(&inode->root);
 		discover_tree_allocations(&inode->root);
 		if (is_dir)
-			xcall(crawl_data(ino, 0, BPFS_EOF, COMMIT_NONE,
-			                 callback_discover_inodes, &mi));
+			xcall(read_dir(ino, 0, &rdd));
 	}
 }
 
@@ -3279,51 +3314,32 @@ struct readdir_params
 	char *buf;
 };
 
-static int callback_readdir(uint64_t blockoff, char *block,
-                            unsigned off, unsigned size, unsigned valid,
-                            uint64_t crawl_start, enum commit commit,
-                            void *p_void, uint64_t *blockno)
+static int read_dir_readdir(uint64_t blockoff, unsigned off,
+                            const struct bpfs_dirent *dirent, void *p_void)
 {
 	struct readdir_params *params = (struct readdir_params*) p_void;
-	const unsigned end = off + size;
-	while (off + BPFS_DIRENT_MIN_LEN <= end)
-	{
-		struct bpfs_dirent *dirent = (struct bpfs_dirent*) (block + off);
-		off_t oldsize = params->total_size;
-		struct stat stbuf;
-		size_t fuse_dirent_size;
+	off_t oldsize = params->total_size;
+	struct stat stbuf;
+	size_t fuse_dirent_size;
 
-		assert(!(off % BPFS_DIRENT_ALIGN));
+	memset(&stbuf, 0, sizeof(stbuf));
+	stbuf.st_ino = dirent->ino;
+	stbuf.st_mode = b2f_filetype(dirent->file_type);
 
-		if (!dirent->rec_len)
-		{
-			// end of directory entries in this block
-			break;
-		}
-		off += dirent->rec_len;
-		assert(off <= BPFS_BLOCK_SIZE);
-		if (dirent->ino == BPFS_INO_INVALID)
-			continue;
-		assert(dirent->rec_len >= BPFS_DIRENT_LEN(dirent->name_len));
+	fuse_dirent_size = fuse_add_direntry(params->req, NULL, 0,
+	                                     dirent->name, NULL, 0);
+	if (params->total_size + fuse_dirent_size > params->max_size)
+		return 1;
+	params->total_size += fuse_dirent_size;
+	params->buf = (char*) realloc(params->buf, params->total_size);
+	if (!params->buf)
+		return -ENOMEM; // PERHAPS: retry with a smaller max_size?
 
-		memset(&stbuf, 0, sizeof(stbuf));
-		stbuf.st_ino = dirent->ino;
-		stbuf.st_mode = b2f_filetype(dirent->file_type);
+	fuse_add_direntry(params->req, params->buf + oldsize,
+	                  params->total_size - oldsize, dirent->name, &stbuf,
+	                  DIRENT_FIRST_PERSISTENT_OFFSET
+	                  + blockoff * BPFS_BLOCK_SIZE + off);
 
-		fuse_dirent_size = fuse_add_direntry(params->req, NULL, 0,
-		                                     dirent->name, NULL, 0);
-		if (params->total_size + fuse_dirent_size > params->max_size)
-			return 1;
-		params->total_size += fuse_dirent_size;
-		params->buf = (char*) realloc(params->buf, params->total_size);
-		if (!params->buf)
-			return -ENOMEM; // PERHAPS: retry with a smaller max_size?
-
-		fuse_add_direntry(params->req, params->buf + oldsize,
-		                  params->total_size - oldsize, dirent->name, &stbuf,
-		                  DIRENT_FIRST_PERSISTENT_OFFSET
-		                  + blockoff * BPFS_BLOCK_SIZE + off);
-	}
 	return 0;
 }
 
@@ -3366,6 +3382,7 @@ static void fuse_readdir(fuse_req_t req, fuse_ino_t ino, size_t max_size,
 	struct bpfs_inode *inode = get_inode(ino);
 	struct readdir_params params = {req, max_size, 0, NULL};
 	struct bpfs_time time_now = BPFS_TIME_NOW();
+	struct read_dir_data rdd = {read_dir_readdir, &params};
 	int r;
 	UNUSED(fi);
 
@@ -3416,8 +3433,7 @@ static void fuse_readdir(fuse_req_t req, fuse_ino_t ino, size_t max_size,
 	}
 	assert(off >= DIRENT_FIRST_PERSISTENT_OFFSET);
 
-	r = crawl_data(ino, off - DIRENT_FIRST_PERSISTENT_OFFSET, BPFS_EOF,
-	               COMMIT_NONE, callback_readdir, &params);
+	r = read_dir(ino, off - DIRENT_FIRST_PERSISTENT_OFFSET, &rdd);
 	if (r < 0)
 		goto abort;
 
