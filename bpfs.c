@@ -2582,6 +2582,34 @@ static unsigned count_bits(unsigned x)
 	return n;
 }
 
+#define ATOMIC_MEMCPY_X(__XB, __Xb, __dst, __src, __n) \
+	do { \
+		typedef uint##__Xb##_t am_type_t; \
+		am_type_t *dst_x = (am_type_t*) ROUNDDOWN64(__dst, __XB); \
+		am_type_t x = *dst_x; \
+		char *x_target = ((char*) &x) + (((size_t) __dst) - ((size_t) dst_x)); \
+		memcpy(x_target, __src, __n); \
+		*dst_x = x; \
+	} while (0)
+
+// memcpy is not guaranteed to, and I've seen it not, write with a single
+// instruction for sizes <= ATOMIC_SIZE.
+static void atomic_memcpy(void *dst, const void *src, size_t n)
+{
+	static_assert(ATOMIC_SIZE == 8);
+	assert(can_atomic_write(block_offset(dst), n));
+
+	// Specialize for each size to reduce byte count overhead
+	if (n == 1)
+		ATOMIC_MEMCPY_X(1, 8, dst, src, n);
+	else if (n == 2)
+		ATOMIC_MEMCPY_X(2, 16, dst, src, n);
+	else if (n <= 4)
+		ATOMIC_MEMCPY_X(4, 32, dst, src, n);
+	else if (n <= 8)
+		ATOMIC_MEMCPY_X(8, 64, dst, src, n);
+}
+
 struct callback_setattr_data {
 	struct stat *attr;
 	int to_set;
@@ -2632,7 +2660,8 @@ static int callback_setattr(char *block, unsigned off,
 		              == offsetof(struct bpfs_inode, gid));
 		static_assert(sizeof(inode->uid) + sizeof(inode->gid) == 8);
 
-		memcpy(&inode->uid, &stage.uid, sizeof(inode->uid)+sizeof(inode->gid));
+		atomic_memcpy(&inode->uid, &stage.uid,
+		              sizeof(inode->uid) + sizeof(inode->gid));
 	}
 	else if (to_set & FUSE_SET_ATTR_UID)
 		inode->uid = attr->st_uid;
@@ -3676,8 +3705,10 @@ static int callback_write(uint64_t blockoff, char *block,
 		block = get_block(newno);
 	}
 
-	// TODO: if can_atomic_write(), will memcpy() make just one write?
-	memcpy(block + off, buf + buf_offset, size);
+	if (can_atomic_write(off, size))
+		atomic_memcpy(block + off, buf + buf_offset, size);
+	else
+		memcpy(block + off, buf + buf_offset, size);
 	if (SCSP_OPT_APPEND && off >= valid)
 		indirect_cow_block_direct(*new_blockno, off, size);
 

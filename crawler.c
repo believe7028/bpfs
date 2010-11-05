@@ -83,6 +83,7 @@ static int crawl_hole(uint64_t blockoff,
 
 	assert(crawl_start / BPFS_BLOCK_SIZE <= blockoff);
 	assert(off + size <= valid);
+	assert(callback);
 
 	while (off < end)
 	{
@@ -143,6 +144,8 @@ static int crawl_indir(uint64_t prev_blockno, uint64_t blockoff,
 
 	if (blockno == BPFS_BLOCKNO_INVALID)
 	{
+		if (!callback)
+			return 0;
 		if (commit == COMMIT_NONE)
 			return crawl_hole(blockoff, off, size, valid, crawl_start,
 			                  callback, user);
@@ -685,6 +688,7 @@ static int callback_crawl_data_2_tree(uint64_t blockoff, char *block,
 			struct ccd2dd *d = &ccd2d->d[i >> 1];
 			bool new = *blockno != prev_blockno;
 			enum commit c = new ? COMMIT_FREE : COMMIT_COPY;
+			assert(d && d->callback);
 			block = get_block(*blockno);
 			int r = d->callback(blockoff, block, d->off % BPFS_BLOCK_SIZE,
 			                    d->size, valid, crawl_start, c,
