@@ -79,6 +79,7 @@ void unfree_block(uint64_t blockno);
 void unalloc_block(uint64_t blockno);
 
 struct bpfs_tree_root* get_inode_root(void);
+struct bpfs_inode* get_inode(uint64_t ino);
 int get_inode_offset(uint64_t ino, uint64_t *poffset);
 
 void ha_set_addr(struct height_addr *pha, uint64_t addr);
@@ -90,6 +91,14 @@ uint64_t tree_root_addr(const struct bpfs_tree_root *root);
 int truncate_block_zero(struct bpfs_tree_root *root,
                         uint64_t begin, uint64_t end, uint64_t valid,
                         uint64_t *blockno);
+
+struct read_dir_data
+{
+	int (*callback)(uint64_t blockoff, unsigned off,
+                    const struct bpfs_dirent *dirent, void *user);
+	void *user;
+};
+int read_dir(uint64_t ino, uint64_t off, struct read_dir_data *rdd);
 
 
 static __inline

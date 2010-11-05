@@ -920,8 +920,6 @@ static int callback_init_inodes(uint64_t blockoff, char *block,
 	return 0;
 }
 
-static struct bpfs_inode* get_inode(uint64_t ino);
-
 static uint64_t alloc_inode(void)
 {
 	uint64_t no = bitmap_alloc(&inode_alloc.bitmap);
@@ -1009,7 +1007,7 @@ static int callback_get_inode(char *block, unsigned off,
 	return 0;
 }
 
-static struct bpfs_inode* get_inode(uint64_t ino)
+struct bpfs_inode* get_inode(uint64_t ino)
 {
 	struct bpfs_inode *inode;
 	xcall(crawl_inode(ino, COMMIT_NONE, callback_get_inode, &inode));
@@ -1238,12 +1236,6 @@ uint64_t tree_root_addr(const struct bpfs_tree_root *root)
 //
 // directory read
 
-struct read_dir_data {
-	int (*callback)(uint64_t blockoff, unsigned off,
-                    const struct bpfs_dirent *dirent, void *user);
-	void *user;
-};
-
 static int callback_read_dir(uint64_t blockoff, char *block,
                              unsigned off, unsigned size,
                              unsigned valid, uint64_t crawl_start,
@@ -1281,7 +1273,7 @@ static int callback_read_dir(uint64_t blockoff, char *block,
 	return 0;
 }
 
-static int read_dir(uint64_t ino, uint64_t off, struct read_dir_data *rdd)
+int read_dir(uint64_t ino, uint64_t off, struct read_dir_data *rdd)
 {
 	return crawl_data(ino, off, BPFS_EOF, COMMIT_NONE, callback_read_dir, rdd);
 }
