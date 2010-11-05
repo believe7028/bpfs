@@ -13,11 +13,12 @@ CFLAGS = -Wall -g
 
 BIN = bpfs mkfs.bpfs pwrite
 OBJS = bpfs.o crawler.o indirect_cow.o mkfs.bpfs.o mkbpfs.o dcache.o \
-       hash_map.o vector.o
+       checksum.o hash_map.o vector.o
 TAGS = tags TAGS
 SRCS = bpfs_structs.h bpfs.h bpfs.c crawler.h crawler.c dcache.h dcache.c \
        indirect_cow.h indirect_cow.c mkbpfs.h mkbpfs.c mkfs.bpfs.c \
-       util.h hash_map.h hash_map.c vector.h vector.c pool.h pwrite.c
+       util.h checksum.h checksum.c hash_map.h hash_map.c vector.h vector.c \
+       pool.h pwrite.c
 # Non-compile sources (at least, for this Makefile):
 NCSRCS = bench/bpramcount.cpp bench/microbench.py
 
@@ -51,6 +52,9 @@ mkbpfs.o: mkbpfs.c mkbpfs.h bpfs.h bpfs_structs.h util.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 dcache.o: dcache.c dcache.h hash_map.h util.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+checksum.o: checksum.c checksum.h bpfs.h bpfs_structs.h util.h crawler.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 vector.o: vector.c vector.h
