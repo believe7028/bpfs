@@ -10,6 +10,9 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+// Set to 1 to intentionally break file system atomicity w.r.t. failures:
+#define BREAK_ATOMICITY_1 0
+
 
 //
 // Core crawler
@@ -335,6 +338,9 @@ static int crawl_tree_ref(struct bpfs_tree_root *root, uint64_t off,
 	uint64_t child_valid;
 	enum commit child_commit;
 	bool change_height_holes = false;
+#if BREAK_ATOMICITY_1
+	uint64_t cur_nbytes = root->nbytes;
+#endif
 	int r;
 
 	/* convenience to help callers avoid get_inode() calls */
@@ -346,6 +352,11 @@ static int crawl_tree_ref(struct bpfs_tree_root *root, uint64_t off,
 		size = root->nbytes - off;
 	}
 	end = off + size;
+
+#if BREAK_ATOMICITY_1
+	root->nbytes = end;
+	root->nbytes = cur_nbytes;
+#endif
 
 	assert(commit != COMMIT_NONE || end <= root->nbytes);
 

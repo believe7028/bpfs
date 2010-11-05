@@ -66,6 +66,9 @@
 // this macro. With hardware support this would also issue an epoch barrier.
 #define epoch_barrier() __asm__ __volatile__("": : :"memory")
 
+// Set to 1 to intentionally break file system atomicity w.r.t. failures:
+#define BREAK_ATOMICITY_2 0
+
 #define DEBUG (0 && !defined(NDEBUG))
 #if DEBUG
 # define Dprintf(x...) fprintf(stderr, x)
@@ -3619,6 +3622,11 @@ static int callback_write(uint64_t blockoff, char *block,
                           void *buf, uint64_t *new_blockno)
 {
 	uint64_t buf_offset = blockoff * BPFS_BLOCK_SIZE + off - crawl_start;
+#if BREAK_ATOMICITY_2
+	char x = *block;
+	*block = x + 1;
+	*block = x;
+#endif
 
 	assert(commit != COMMIT_NONE);
 	if (!(commit == COMMIT_FREE
