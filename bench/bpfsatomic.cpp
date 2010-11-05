@@ -43,6 +43,8 @@ UINT64 bpram_nbytes;
 
 UINT64 nbytes;
 
+KNOB<bool> KnobQuiet(KNOB_MODE_WRITEONCE, "pintool",
+	"q", "0", "Quiet (t/f)");
 
 KNOB<UINT64> KnobOpMax(KNOB_MODE_WRITEONCE, "pintool",
 	"o", "1000", "Max number of file system operations between tests");
@@ -403,7 +405,11 @@ public:
 		checking_op = fire_ops.event(true);
 		if (checking_op)
 		{
-			printf("pin: "); fflush(stdout);
+			if (!KnobQuiet.Value())
+			{
+				printf("pin: ");
+				fflush(stdout);
+			}
 			prev = timed_checksum_fs(NULL);
 			fire_writes.reset();
 			op_fire_writes_te_start = fire_writes.ntotalevents;
@@ -458,13 +464,16 @@ public:
 			}
 		}
 
-		printf("op time %ld.%.06lds", time_op.tv_sec, time_op.tv_usec);
-		if (hope_next_set)
-			printf(" (last check %ld.%.06lds)", len.tv_sec, len.tv_usec);
-		printf(". %" PRIu64 "/%" PRIu64 " writes. next op in %" PRIu64 ".\n",
-		       fire_writes.nfires - op_fire_writes_f_start,
-		       fire_writes.ntotalevents - op_fire_writes_te_start,
-		       fire_ops.nremaining);
+		if (!KnobQuiet.Value())
+		{
+			printf("op time %ld.%.06lds", time_op.tv_sec, time_op.tv_usec);
+			if (hope_next_set)
+				printf(" (last check %ld.%.06lds)", len.tv_sec, len.tv_usec);
+			printf(". %" PRIu64 "/%" PRIu64 " writes. next op in %" PRIu64 ".\n",
+			       fire_writes.nfires - op_fire_writes_f_start,
+			       fire_writes.ntotalevents - op_fire_writes_te_start,
+			       fire_ops.nremaining);
+		}
 		timerclear(&time_op);
 
 		hope_next_set = false;
@@ -530,10 +539,21 @@ VOID RecordMemWrite(ADDRINT size, CONTEXT *ctxt, VOID *rip)
 		assert(off + size <= bpram_nbytes);
 		n = PIN_SafeCopyEx(bpfs_mirror.bpram + off, addr, size, &ei);
 		if (n != size)
-			fprintf(stderr, "pin: %s: %lu != %lu\n", __FUNCTION__, n, size);
+		{
+			static bool warned = false;
+			if (!KnobQuiet.Value() || !warned)
+			{
+				fprintf(stderr, "pin: %s: %lu != %lu\n", __FUNCTION__, n, size);
+				if (KnobQuiet.Value())
+				   fprintf(stderr, "(not notifying of additional copy errors)\n");
+				warned = true;
+			}
+		}
 		//xassert(n == size); // fails at end. why? OK?
 		nbytes += size;
 
+		// Useful if checksum_fs() hits an error:
+		// LogBacktrace(ctxt, rip, size);
 		bool p = checksum->op_check();
 		if (!p)
 		{
