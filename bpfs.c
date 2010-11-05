@@ -1877,6 +1877,7 @@ static int callback_dirent_plug(uint64_t blockoff, char *block,
 			                    BPFS_BLOCK_SIZE - next_off);
 			xassert(!r); // FIXME: recover from OOM
 		}
+		dirent->ino = BPFS_INO_INVALID; // rec_len was guarding this field
 		dirent->rec_len = min_hole_size;
 	}
 	dirent->name_len = sd->str.len;
