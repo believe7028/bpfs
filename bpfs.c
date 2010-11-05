@@ -1679,6 +1679,10 @@ static void detect_allocation_diffs(void)
 }
 #endif
 
+static void bpfs_commit_start(void)
+{
+}
+
 static void bpfs_abort(void)
 {
 #if COMMIT_MODE != MODE_BPFS
@@ -2245,6 +2249,7 @@ static void fuse_init(void *userdata, struct fuse_conn_info *conn)
 	const char *mode;
 	static_assert(FUSE_ROOT_ID == BPFS_INO_ROOT);
 	Dprintf("%s()\n", __FUNCTION__);
+	bpfs_commit_start();
 	switch (COMMIT_MODE)
 	{
 		case MODE_SP:   mode = "SP";   break;
@@ -2267,6 +2272,7 @@ static void fuse_init(void *userdata, struct fuse_conn_info *conn)
 static void fuse_destroy(void *userdata)
 {
 	Dprintf("%s()\n", __FUNCTION__);
+	bpfs_commit_start();
 
 	if (!bpfs_super->ephemeral_valid)
 		bpfs_super->ephemeral_valid = 1;
@@ -2282,6 +2288,7 @@ static void fuse_statfs(fuse_req_t req, fuse_ino_t ino)
 	UNUSED(ino);
 
 	Dprintf("%s(ino = %lu)\n", __FUNCTION__, ino);
+	bpfs_commit_start();
 
 	if (!inode)
 	{
@@ -2337,6 +2344,7 @@ static void fuse_lookup(fuse_req_t req, fuse_ino_t parent_ino, const char *name)
 
 	Dprintf("%s(parent_ino = %lu, name = '%s')\n",
 	        __FUNCTION__, parent_ino, name);
+	bpfs_commit_start();
 
 	r = find_dirent(parent_ino, name, &mdirent);
 	if (r < 0)
@@ -2370,6 +2378,7 @@ static void fuse_getattr(fuse_req_t req, fuse_ino_t ino,
 	UNUSED(fi);
 
 	Dprintf("%s(ino = %lu)\n", __FUNCTION__, ino);
+	bpfs_commit_start();
 
 	bpfs_stat(ino, &stbuf);
 	bpfs_commit();
@@ -2717,6 +2726,7 @@ static void fuse_setattr(fuse_req_t req, fuse_ino_t ino, struct stat *attr,
 #endif
 	}
 	Dprintf(")\n");
+	bpfs_commit_start();
 
 	assert(!(to_set & ~supported));
 	to_set &= supported;
@@ -2741,6 +2751,7 @@ static void fuse_readlink(fuse_req_t req, fuse_ino_t ino)
 	struct bpfs_inode *inode = get_inode(ino);
 
 	Dprintf("%s(ino = %lu)\n", __FUNCTION__, ino);
+	bpfs_commit_start();
 
 	assert(BPFS_S_ISLNK(inode->mode));
 	assert(inode->root.nbytes);
@@ -2760,6 +2771,7 @@ static void fuse_mknod(fuse_req_t req, fuse_ino_t parent_ino, const char *name,
 
 	Dprintf("%s(parent_ino = %lu, name = '%s')\n",
 	        __FUNCTION__, parent_ino, name);
+	bpfs_commit_start();
 
 	if (S_ISBLK(mode) || S_ISCHR(mode))
 	{
@@ -2791,6 +2803,7 @@ static void fuse_mkdir(fuse_req_t req, fuse_ino_t parent_ino, const char *name,
 
 	Dprintf("%s(parent_ino = %lu, name = '%s')\n",
 	        __FUNCTION__, parent_ino, name);
+	bpfs_commit_start();
 
 	r = create_file(req, parent_ino, name, mode | S_IFDIR, NULL, &dirent);
 	if (r < 0)
@@ -2947,6 +2960,7 @@ static void fuse_unlink(fuse_req_t req, fuse_ino_t parent_ino,
 
 	Dprintf("%s(parent_ino = %lu, name = '%s')\n",
 	        __FUNCTION__, parent_ino, name);
+	bpfs_commit_start();
 
 	r = find_dirent(parent_ino, name, &mdirent);
 	if (r < 0)
@@ -3004,6 +3018,7 @@ static void fuse_rmdir(fuse_req_t req, fuse_ino_t parent_ino, const char *name)
 
 	Dprintf("%s(parent_ino = %lu, name = '%s')\n",
 	        __FUNCTION__, parent_ino, name);
+	bpfs_commit_start();
 
 	r = find_dirent(parent_ino, name, &mdirent);
 	if (r < 0)
@@ -3047,6 +3062,7 @@ static void fuse_symlink(fuse_req_t req, const char *link,
 
 	Dprintf("%s(link = '%s', parent_ino = %lu, name = '%s')\n",
 	        __FUNCTION__, link, parent_ino, name);
+	bpfs_commit_start();
 
 	r = create_file(req, parent_ino, name, S_IFLNK | 0777, link, &dirent);
 	if (r < 0)
@@ -3079,6 +3095,7 @@ static void fuse_rename(fuse_req_t req,
 	Dprintf("%s(src_parent_ino = %lu, src_name = '%s',"
 	        " dst_parent_ino = %lu, dst_name = '%s')\n",
 	        __FUNCTION__, src_parent_ino, src_name, dst_parent_ino, dst_name);
+	bpfs_commit_start();
 
 	r = find_dirent(src_parent_ino, src_name, &src_md);
 	if (r < 0)
@@ -3220,6 +3237,7 @@ static void fuse_link(fuse_req_t req, fuse_ino_t fuse_ino,
 
 	Dprintf("%s(ino = %lu, parent_ino = %lu, name = '%s')\n",
 	        __FUNCTION__, fuse_ino, parent_ino, name);
+	bpfs_commit_start();
 
 	if (name_len > BPFS_DIRENT_MAX_NAME_LEN)
 	{
@@ -3292,6 +3310,7 @@ static void fuse_opendir(fuse_req_t req, fuse_ino_t ino,
                          struct fuse_file_info *fi)
 {
 	Dprintf("%s(ino = %lu)\n", __FUNCTION__, ino);
+	bpfs_commit_start();
 
 	assert(get_inode(ino)->nlinks);
 
@@ -3383,6 +3402,7 @@ static void fuse_readdir(fuse_req_t req, fuse_ino_t ino, size_t max_size,
 
 	Dprintf("%s(ino = %lu, off = %" PRId64 ")\n",
 	        __FUNCTION__, ino, off);
+	bpfs_commit_start();
 
 	assert(inode->nlinks);
 
@@ -3452,6 +3472,7 @@ static void fuse_releasedir(fuse_req_t req, fuse_ino_t ino,
                             struct fuse_file_info *fi)
 {
 	Dprintf("%s(ino = %lu)\n", __FUNCTION__, ino);
+	bpfs_commit_start();
 	bpfs_commit();
 }
 #endif
@@ -3474,6 +3495,7 @@ static void fuse_fsyncdir(fuse_req_t req, fuse_ino_t ino, int datasync,
 {
 	int r;
 	Dprintf("%s(ino = %lu, datasync = %d)\n", __FUNCTION__, ino, datasync);
+	bpfs_commit_start();
 
 	r = sync_inode(ino, datasync);
 	if (r < 0)
@@ -3498,6 +3520,7 @@ static void fuse_create(fuse_req_t req, fuse_ino_t parent_ino,
 
 	Dprintf("%s(parent_ino = %lu, name = '%s')\n",
 	        __FUNCTION__, parent_ino, name);
+	bpfs_commit_start();
 
 	r = create_file(req, parent_ino, name, mode, NULL, &dirent);
 	if (r < 0)
@@ -3518,6 +3541,7 @@ static void fuse_open(fuse_req_t req, fuse_ino_t ino,
 	struct bpfs_inode *inode;
 
 	Dprintf("%s(ino = %lu)\n", __FUNCTION__, ino);
+	bpfs_commit_start();
 
 	inode = get_inode(ino);
 	if (!inode)
@@ -3565,6 +3589,7 @@ static void fuse_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off,
 
 	Dprintf("%s(ino = %lu, off = %" PRId64 ", size = %zu)\n",
 	        __FUNCTION__, ino, off, size);
+	bpfs_commit_start();
 
 	if (!inode)
 	{
@@ -3686,6 +3711,7 @@ static void fuse_write(fuse_req_t req, fuse_ino_t ino, const char *buf,
 
 	Dprintf("%s(ino = %lu, off = %" PRId64 ", size = %zu)\n",
 	        __FUNCTION__, ino, off, size);
+	bpfs_commit_start();
 
 	assert(get_inode(ino)->nlinks);
 
@@ -3716,6 +3742,7 @@ static void fuse_flush(fuse_req_t req, fuse_ino_t ino,
                        struct fuse_file_info *fi)
 {
 	Dprintf("%s(ino = %lu)\n", __FUNCTION__, ino);
+	bpfs_commit_start();
 	bpfs_commit();
 	xcall(fuse_reply_err(req, ENOSYS));
 }
@@ -3724,6 +3751,7 @@ static void fuse_release(fuse_req_t req, fuse_ino_t ino,
                          struct fuse_file_info *fi)
 {
 	Dprintf("%s(ino = %lu)\n", __FUNCTION__, ino);
+	bpfs_commit_start();
 	bpfs_commit();
 }
 #endif
@@ -3733,6 +3761,7 @@ static void fuse_fsync(fuse_req_t req, fuse_ino_t ino, int datasync,
 {
 	int r;
 	Dprintf("%s(ino = %lu, datasync = %d)\n", __FUNCTION__, ino, datasync);
+	bpfs_commit_start();
 
 	r = sync_inode(ino, datasync);
 	if (r < 0)
