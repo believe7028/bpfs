@@ -440,7 +440,7 @@ public:
 	void op_stop()
 	{
 		struct timeval len;
-		uint64_t sum;
+		memset(&len, 0, sizeof(len)); // appease gcc
 
 		assert(in_op);
 		in_op = false;
@@ -448,19 +448,27 @@ public:
 		if (!checking_op)
 			return;
 
-		sum = timed_checksum_fs(&len);
 		if (hope_next_set)
-			xassert(hope_next == sum);
+		{
+			uint64_t sum = timed_checksum_fs(&len);
+			if (hope_next != sum)
+			{
+				printf("pin: Non-atomic write. Detect at end of op.\n");
+				xassert(hope_next == sum);
+			}
+		}
+
+		printf("op time %ld.%.06lds", time_op.tv_sec, time_op.tv_usec);
+		if (hope_next_set)
+			printf(" (last check %ld.%.06lds)", len.tv_sec, len.tv_usec);
+		printf(". %" PRIu64 "/%" PRIu64 " writes. next op in %" PRIu64 ".\n",
+		       fire_writes.nfires - op_fire_writes_f_start,
+		       fire_writes.ntotalevents - op_fire_writes_te_start,
+		       fire_ops.nremaining);
+		timerclear(&time_op);
 
 		hope_next_set = false;
 		hope_next = 0;
-
-		printf("op time %ld.%.06lds (last check %ld.%.06lds). %" PRIu64 "/%" PRIu64 " writes. next op in %" PRIu64 ".\n",
-	           time_op.tv_sec, time_op.tv_usec, len.tv_sec, len.tv_usec,
-	           fire_writes.nfires - op_fire_writes_f_start,
-			   fire_writes.ntotalevents - op_fire_writes_te_start,
-			   fire_ops.nremaining);
-		timerclear(&time_op);
 	}
 
 	freq_fire fire_ops;
@@ -529,7 +537,7 @@ VOID RecordMemWrite(ADDRINT size, CONTEXT *ctxt, VOID *rip)
 		bool p = checksum->op_check();
 		if (!p)
 		{
-			printf("pin: Test failed. Non-atomic write.\n");
+			printf("pin: Non-atomic write. Detected within the op.\n");
 			LogBacktrace(ctxt, rip, size);
 			xassert(0);
 		}
