@@ -89,7 +89,7 @@ $(OBJDIR)cp-pin.exe:
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
 
-$(OBJDIR)%.o : %.cpp
+$(OBJDIR)%.o : %.cpp ../bpfs.h ../checksum.h ../crawler.h
 	$(CXX) -g -c $(CXXFLAGS) $(PIN_CXXFLAGS) ${OUTOPT}$@ $< -I../
 
 $(TOOLS): $(PIN_LIBNAMES)
