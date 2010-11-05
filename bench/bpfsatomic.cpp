@@ -443,12 +443,16 @@ public:
 		return true;
 	}
 
-	void op_stop()
+	void op_stop(const char *fn)
 	{
 		struct timeval len;
 		memset(&len, 0, sizeof(len)); // appease gcc
 
-		assert(in_op);
+		if (!in_op)
+		{
+			printf("Not in an op? Function \"%s\".", fn);
+			assert(in_op);
+		}
 		in_op = false;
 
 		if (!checking_op)
@@ -459,7 +463,8 @@ public:
 			uint64_t sum = timed_checksum_fs(&len);
 			if (hope_next != sum)
 			{
-				printf("pin: Non-atomic write. Detect at end of op.\n");
+				printf("pin: Non-atomic write. Detect at end of op \"%s\".\n",
+				       fn);
 				xassert(hope_next == sum);
 			}
 		}
@@ -638,9 +643,29 @@ VOID InformPinCommitStart()
 	checksum->op_start();
 }
 
-VOID InformPinCommitStop()
+VOID InformPinCommitStop(ADDRINT fn_addr)
 {
-	checksum->op_stop();
+	//char fn[64];
+	//EXCEPTION_INFO ei;
+	//size_t n;
+
+	/*
+	n = PIN_SafeCopyEx(fn, fn_addr, size, &ei);
+	if (n != size)
+	{
+		static bool warned = false;
+		if (!KnobQuiet.Value() || !warned)
+		{
+			fprintf(stderr, "pin: %s: %lu != %lu\n", __FUNCTION__, n, size);
+			if (KnobQuiet.Value())
+			   fprintf(stderr, "(not notifying of additional copy errors)\n");
+			warned = true;
+		}
+	}
+	*/
+
+	// XXX: should PIN_SafeCopy fn_addr:
+	checksum->op_stop((const char *) fn_addr);
 }
 
 
@@ -657,9 +682,9 @@ VOID Image(IMG img, VOID *v)
 	{
 		RTN_Open(rtn);
 		RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) InformPinBpramBefore,
-			IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
-			IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
-			IARG_END);
+		               IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+		               IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
+		               IARG_END);
 		RTN_Close(rtn);
 	}
 
@@ -668,7 +693,7 @@ VOID Image(IMG img, VOID *v)
 	{
 		RTN_Open(rtn);
 		RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) InformPinCommitStart,
-			IARG_END);
+		               IARG_END);
 		RTN_Close(rtn);
 	}
 
@@ -677,7 +702,8 @@ VOID Image(IMG img, VOID *v)
 	{
 		RTN_Open(rtn);
 		RTN_InsertCall(rtn, IPOINT_BEFORE, (AFUNPTR) InformPinCommitStop,
-			IARG_END);
+		               IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+		               IARG_END);
 		RTN_Close(rtn);
 	}
 }

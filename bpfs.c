@@ -1683,14 +1683,14 @@ static void detect_allocation_diffs(void)
 #endif
 
 static void random_checksum_start_op(void);
-static void random_checksum_stop_op(void);
+static void random_checksum_stop_op(const char *fn);
 
 static void bpfs_commit_start(void)
 {
 	random_checksum_start_op();
 }
 
-static void bpfs_abort(void)
+static void bpfs_abort_real(const char *fn)
 {
 #if COMMIT_MODE != MODE_BPFS
 	revert_superblock();
@@ -1705,10 +1705,12 @@ static void bpfs_abort(void)
 	reset_indirect_cow_superblock();
 #endif
 
-	random_checksum_stop_op();
+	random_checksum_stop_op(fn);
 }
 
-static void bpfs_commit(void)
+#define bpfs_abort() bpfs_abort_real(__FUNCTION__)
+
+static void bpfs_commit_real(const char *fn)
 {
 #if COMMIT_MODE != MODE_BPFS
 	persist_superblock();
@@ -1723,8 +1725,10 @@ static void bpfs_commit(void)
 	reset_indirect_cow_superblock();
 #endif
 
-	random_checksum_stop_op();
+	random_checksum_stop_op(fn);
 }
+
+#define bpfs_commit() bpfs_commit_real(__FUNCTION__)
 
 
 static int callback_load_directory(uint64_t blockoff, char *block,
@@ -3918,7 +3922,7 @@ void random_checksum_start_op(void)
 	//random_checksum_start_timer();
 }
 
-void random_checksum_stop_op(void)
+void random_checksum_stop_op(const char *fn)
 {
 	//struct itimerval itv;
 	uint64_t sum;
