@@ -713,6 +713,7 @@ int main(int argc, char **argv)
 	PIN_InitSymbols();
     PIN_Init(argc, argv);
 
+	crawler_init();
 	srand(time(NULL));
 	checksum = new bpfs_checksum(KnobOpMax.Value(), KnobWriteMax.Value());
 
