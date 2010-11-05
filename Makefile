@@ -8,6 +8,8 @@ CFLAGS = -Wall -g
 #CFLAGS += -msahf -msse4 -msse4.1 -msse4.2
 # Enable gprof:
 #CFLAGS += -pg
+# To build bpfsatomic:
+#CFLAGS += -fPIC
 
 .PHONY: all clean
 
