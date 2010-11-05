@@ -118,6 +118,7 @@ struct bpfs_time
 };
 
 // TODO: could shrink bpfs_inode from 128 to 64 bytes
+// When adding fields also update checksum_inode()
 struct bpfs_inode
 {
 	uint64_t generation;
@@ -170,7 +171,7 @@ static inline void* __bpfs_structs_static_asserts(void)
 	// struct bpfs_dirent itself does not have alignment restrictions
 	static_assert(sizeof(struct bpfs_dirent) == 12);
 	static_assert(!(BPFS_DIRENT_MIN_LEN % 8));
-	return __bpfs_structs_static_asserts;
+	return (void*) __bpfs_structs_static_asserts;
 }
 
 #endif

@@ -52,30 +52,39 @@
 		err; \
 	})
 
-#define UNUSED(x) do { (void) x; } while(0)
+#ifndef UNUSED
+# define UNUSED(x) do { (void) x; } while(0)
+#endif
 
 // static_assert(x) will generate a compile-time error if 'x' is false.
 #define static_assert(x) switch (x) case 0: case (x):
 
 // Efficient min and max operations
-#define MIN(_a, _b) \
+#ifndef MIN
+# define MIN(_a, _b) \
 	({ \
 		typeof(_a) __a = (_a);  \
 		typeof(_b) __b = (_b);  \
 		__a <= __b ? __a : __b; \
 	})
-#define MAX(_a, _b) \
+#endif
+
+#ifndef MAX
+# define MAX(_a, _b) \
 	({ \
 		typeof(_a) __a = (_a);  \
 		typeof(_b) __b = (_b);  \
 		__a >= __b ? __a : __b; \
 	})
-#define MAXU64(_a, _b) \
+#endif
+#ifndef MAXU65
+# define MAXU64(_a, _b) \
 	({ \
 		uint64_t __a = (_a);  \
 		uint64_t __b = (_b);  \
 		__a >= __b ? __a : __b; \
 	})
+#endif
 
 // Max operation that propagates constant expressions as constants
 #define CMAX(_a, _b) ((_a) >= (_b) ? (_a) : (_b))
