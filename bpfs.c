@@ -8,6 +8,7 @@
 #include "crawler.h"
 #include "indirect_cow.h"
 #include "util.h"
+#include "checksum.h"
 #include "hash_map.h"
 
 #define FUSE_USE_VERSION FUSE_MAKE_VERSION(2, 8)
@@ -53,6 +54,8 @@
 // Miklos's 2006/06/27 email, E1FvBX0-0006PB-00@dorka.pomaz.szeredi.hu, fixes.
 #define STDTIMEOUT 1.0
 
+// Maximum interval between two random checksums. Unit is microseconds.
+#define RCHECKSUM_MAX_INTERVAL 20000
 // Maximum interval between two random fscks. Unit is microseconds.
 #define RFSCK_MAX_INTERVAL 100000
 
@@ -1679,8 +1682,12 @@ static void detect_allocation_diffs(void)
 }
 #endif
 
+static void random_checksum_start_op(void);
+static void random_checksum_stop_op(void);
+
 static void bpfs_commit_start(void)
 {
+	random_checksum_start_op();
 }
 
 static void bpfs_abort(void)
@@ -1697,6 +1704,8 @@ static void bpfs_abort(void)
 #if INDIRECT_COW
 	reset_indirect_cow_superblock();
 #endif
+
+	random_checksum_stop_op();
 }
 
 static void bpfs_commit(void)
@@ -1713,6 +1722,8 @@ static void bpfs_commit(void)
 #if COMMIT_MODE == MODE_SCSP
 	reset_indirect_cow_superblock();
 #endif
+
+	random_checksum_stop_op();
 }
 
 
@@ -3828,9 +3839,111 @@ static void init_fuse_ops(struct fuse_lowlevel_ops *fuse_ops)
 
 
 //
+// random checksum
+
+static struct
+{
+	bool enabled;
+	bool in_op;
+	uint64_t nops;
+	uint64_t nmissed;
+	uint64_t nchecks;
+	uint64_t prev;
+	bool hope_next_set;
+	uint64_t hope_next;
+} rchecksum;
+
+static void random_checksum_start_timer(void)
+{
+	struct itimerval itv;
+	memset(&itv, 0, sizeof(itv));
+	static_assert(RCHECKSUM_MAX_INTERVAL <= RAND_MAX);
+	// - 1 + 1 to disallow 0us, which disables the timer:
+	itv.it_value.tv_usec = (rand() % (RCHECKSUM_MAX_INTERVAL - 1)) + 1;
+	assert(itv.it_value.tv_usec > 0);
+	// fprintf(stderr, "start timer for %ld usecs\n", itv.it_value.tv_usec);
+	xsyscall(setitimer(ITIMER_VIRTUAL, &itv, NULL));
+}
+
+static void random_checksum_fire(int signo)
+{
+	uint64_t sum;
+
+	if (!rchecksum.in_op)
+		rchecksum.nmissed++;
+	else
+	{
+		// TODO: Should read BPRAM only
+		sum = checksum_fs();
+		if (sum != rchecksum.prev)
+		{
+			xassert(!rchecksum.hope_next_set);
+			rchecksum.hope_next_set = true;
+			rchecksum.hope_next = sum;
+		}
+		rchecksum.nchecks++;
+		xassert(rchecksum.nchecks);
+	}
+
+	random_checksum_start_timer();
+}
+
+static void random_checksum_init(void)
+{
+	rchecksum.prev = checksum_fs();
+	rchecksum.enabled = true;
+	random_checksum_start_timer();
+}
+
+static void random_checksum_destroy(void)
+{
+	if (!rchecksum.enabled)
+		return;
+
+	printf("%" PRIu64 " checksums (missed %" PRIu64 ") in %" PRIu64 " ops\n",
+	       rchecksum.nchecks, rchecksum.nmissed, rchecksum.nops);
+}
+
+void random_checksum_start_op(void)
+{
+	if (!rchecksum.enabled)
+		return;
+	assert(!rchecksum.in_op);
+
+	rchecksum.in_op = true;
+	rchecksum.nops++;
+	xassert(rchecksum.nops);
+	assert(rchecksum.prev == checksum_fs());
+	//random_checksum_start_timer();
+}
+
+void random_checksum_stop_op(void)
+{
+	//struct itimerval itv;
+	uint64_t sum;
+
+	if (!rchecksum.enabled)
+		return;
+	assert(rchecksum.in_op);
+
+	rchecksum.in_op = false;
+	//memset(&itv, 0, sizeof(itv));
+	//xsyscall(setitimer(ITIMER_VIRTUAL, &itv, NULL));
+
+	sum = checksum_fs();
+	if (rchecksum.hope_next_set)
+		xassert(rchecksum.hope_next == sum);
+
+	rchecksum.prev = sum;
+	rchecksum.hope_next_set = false;
+	rchecksum.hope_next = 0;
+}
+
+
+//
 // random fsck
 
-void random_fsck(int signo)
+static void random_fsck(int signo)
 {
 	struct allocation alloc;
 	struct itimerval itv;
@@ -4023,6 +4136,26 @@ int main(int argc, char **argv)
 	}
 #endif
 
+	if (getenv("RCHECKSUM"))
+	{
+		struct itimerval itv;
+
+		if (!strcmp(getenv("RCHECKSUM"), ""))
+			srand(time(NULL));
+		else
+			srand(atoi(getenv("RCHECKSUM")));
+
+		xsyscall(getitimer(ITIMER_VIRTUAL, &itv));
+		if (itv.it_value.tv_sec || itv.it_value.tv_usec)
+			printf("ITIMER_VIRTUAL already in use. Not enabling random checksum.\n");
+		else
+		{
+			xassert(!signal(SIGVTALRM, random_checksum_fire));
+			random_checksum_init();
+			printf("Running with random checksum.\n");
+		}
+	}
+
 	if (getenv("RFSCK"))
 	{
 #if BLOCK_POISON
@@ -4033,19 +4166,26 @@ int main(int argc, char **argv)
 #else
 		struct itimerval itv;
 
-		if (!strcmp(getenv("RFSCK"), ""))
-			srand(time(NULL));
-		else
-			srand(atoi(getenv("RFSCK")));
-
-		xsyscall(getitimer(ITIMER_VIRTUAL, &itv));
-		if (itv.it_value.tv_sec || itv.it_value.tv_usec)
-			printf("ITIMER_VIRTUAL already in use. Not enabling random fsck.\n");
+		if (getenv("RCHECKSUM"))
+			printf("Not enabling random fsck: random checksum is enabled.\n");
 		else
 		{
-			xassert(!signal(SIGVTALRM, random_fsck));
-			// start the timer (and needlessly do an fsck):
-			random_fsck(SIGVTALRM);
+
+			if (!strcmp(getenv("RFSCK"), ""))
+				srand(time(NULL));
+			else
+				srand(atoi(getenv("RFSCK")));
+
+			xsyscall(getitimer(ITIMER_VIRTUAL, &itv));
+			if (itv.it_value.tv_sec || itv.it_value.tv_usec)
+				printf("ITIMER_VIRTUAL already in use. Not enabling random fsck.\n");
+			else
+			{
+				xassert(!signal(SIGVTALRM, random_fsck));
+				printf("Running with random fsck.\n");
+				// start the timer (and needlessly do an fsck):
+				random_fsck(SIGVTALRM);
+			}
 		}
 #endif
 	}
@@ -4134,6 +4274,7 @@ int main(int argc, char **argv)
 	printf("CoW: -1 bytes in -1 blocks\n");
 #endif
 
+	random_checksum_destroy();
 	dcache_destroy();
 	destroy_allocations();
 #if INDIRECT_COW

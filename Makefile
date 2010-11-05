@@ -35,7 +35,7 @@ TAGS: $(SRCS) $(NCSRCS)
 	@if ctags --version | grep -q Exuberant; then ctags -e $(SRCS) $(NCSRCS); else touch $@; fi
 
 bpfs.o: bpfs.c bpfs_structs.h bpfs.h crawler.h indirect_cow.h \
-	mkbpfs.h dcache.h util.h hash_map.h
+	mkbpfs.h dcache.h util.h checksum.h hash_map.h
 	$(CC) $(CFLAGS) `pkg-config --cflags fuse` -c -o $@ $<
 
 mkfs.bpfs.o: mkfs.bpfs.c mkbpfs.h util.h
@@ -63,7 +63,8 @@ vector.o: vector.c vector.h
 hash_map.o: hash_map.c hash_map.h vector.h pool.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-bpfs: bpfs.o crawler.o indirect_cow.o mkbpfs.o dcache.o hash_map.o vector.o
+bpfs: bpfs.o crawler.o indirect_cow.o mkbpfs.o dcache.o checksum.o \
+	hash_map.o vector.o
 	$(CC) $(CFLAGS) `pkg-config --libs fuse` -luuid -o $@ $^
 
 mkfs.bpfs: mkfs.bpfs.o mkbpfs.o
