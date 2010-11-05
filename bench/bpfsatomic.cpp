@@ -19,6 +19,14 @@
 #include <sys/time.h>
 #include "pin.H"
 
+#if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 4)
+# include <unordered_map>
+using std::unordered_map;
+#else
+# include <ext/hash_map>
+# define unordered_map __gnu_cxx::hash_map
+#endif
+
 
 // Why doesn't stdint.h define this?
 #ifndef UINT64_MAX
@@ -119,11 +127,61 @@ VOID LogBacktrace(CONTEXT *ctxt, VOID *rip, ADDRINT size)
 
 
 //
+// Implementation of the checksum block cache API
+
+#if ENABLE_CHECKSUM_BLOCK_CACHE
+typedef unordered_map<uint64_t, uint64_t> block_checksum_map;
+
+block_checksum_map bc_map;
+
+extern "C" {
+
+bool checksum_block_cache_get(uint64_t blockno, uint64_t *sum)
+{
+	block_checksum_map::iterator it = bc_map.find(blockno);
+	assert(blockno != BPFS_BLOCKNO_INVALID);
+	if (it != bc_map.end())
+	{
+		*sum = it->second;
+		return true;
+	}
+	return false;
+}
+
+void checksum_block_cache_put(uint64_t blockno, uint64_t sum)
+{
+	assert(blockno != BPFS_BLOCKNO_INVALID);
+	bc_map[blockno] = sum;
+}
+
+}
+
+static void checksum_block_cache_invalidate(uint64_t blockno)
+{
+	assert(blockno != BPFS_BLOCKNO_INVALID);
+	// Would it help performance to cache the last block or few
+	// before hitting bc_map? (_put() will need to invalidate this.)
+	bc_map.erase(blockno);
+}
+#endif
+
+
+//
 // Reimplementation of the bpfs.h and indirect_cow.h API
 
 static struct {
-   char *bpram;
+	char *bpram;
 } bpfs_mirror;
+
+static uint64_t bpram_blockno(const void *x)
+{
+	const char *c = (const char*) x;
+	assert(bpfs_mirror.bpram <= c && c < bpfs_mirror.bpram + bpram_nbytes);
+	if (c < bpfs_mirror.bpram || bpfs_mirror.bpram + bpram_nbytes <= c)
+		return BPFS_BLOCKNO_INVALID;
+	static_assert(BPFS_BLOCKNO_INVALID == 0);
+	return (((uintptr_t) (c - bpfs_mirror.bpram)) / BPFS_BLOCK_SIZE) + 1;
+}
 
 extern "C" {
 
@@ -541,7 +599,9 @@ VOID RecordMemWrite(ADDRINT size, CONTEXT *ctxt, VOID *rip)
 		uint64_t off = (uint64_t)addr - (uint64_t)bpram_start;
 		EXCEPTION_INFO ei;
 		size_t n;
+
 		assert(off + size <= bpram_nbytes);
+
 		n = PIN_SafeCopyEx(bpfs_mirror.bpram + off, addr, size, &ei);
 		if (n != size)
 		{
@@ -555,6 +615,11 @@ VOID RecordMemWrite(ADDRINT size, CONTEXT *ctxt, VOID *rip)
 			}
 		}
 		//xassert(n == size); // fails at end. why? OK?
+
+#if ENABLE_CHECKSUM_BLOCK_CACHE
+		checksum_block_cache_invalidate(bpram_blockno(bpfs_mirror.bpram + off));
+#endif
+
 		nbytes += size;
 
 		// Useful if checksum_fs() hits an error:
