@@ -481,9 +481,14 @@ public:
 		}
 	}
 
-   	bool op_check()
+	// Return whether the changes since the last check are safe.
+	// Sets *changed_fs for the check that first notices a change in an op.
+	bool op_check(bool *changed_fs)
 	{
 		uint64_t sum;
+
+		if (changed_fs)
+		   *changed_fs = false;
 
 		if (!in_op)
 			return true; // TODO: why is this possible?
@@ -498,6 +503,8 @@ public:
 		   {
 			  hope_next_set = true;
 			  hope_next = sum;
+			  if (changed_fs)
+				 *changed_fs = true;
 		   }
 		   else if (sum != hope_next)
 		   {
@@ -633,8 +640,17 @@ VOID RecordMemWrite(ADDRINT size, CONTEXT *ctxt, VOID *rip)
 
 		// Useful if checksum_fs() hits an error:
 		// LogBacktrace(ctxt, rip, size);
-		bool p = checksum->op_check();
-		if (!p)
+		bool changed_fs;
+		bool passed = checksum->op_check(&changed_fs);
+		// Enable to also show the backtrace of the first change instruction:
+#if 0
+		if (changed_fs)
+		{
+			printf("pin: File system changed within the op.\n");
+			LogBacktrace(ctxt, rip, size);
+		}
+#endif
+		if (!passed)
 		{
 			printf("pin: Non-atomic write. Detected within the op.\n");
 			LogBacktrace(ctxt, rip, size);
