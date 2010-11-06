@@ -45,11 +45,11 @@ static int callback_checksum_block(uint64_t blockoff, char *block,
 		static_assert(CHECKSUM_DBLOCK_INITIAL == 0);
 		block_sum = 0;
 	}
-	else if (!checksum_block_cache_get(*new_blockno, &block_sum))
+	else if (!checksum_block_cache_get(*new_blockno, size, &block_sum))
 	{
 		block_sum = checksum_byte(CHECKSUM_DBLOCK_INITIAL,
 		                          (const uint8_t*) block, size);
-		checksum_block_cache_put(*new_blockno, block_sum);
+		checksum_block_cache_put(*new_blockno, size, block_sum);
 	}
 	*sum = checksum_byte(*sum, (const uint8_t*) &block_sum, sizeof(block_sum));
 #endif

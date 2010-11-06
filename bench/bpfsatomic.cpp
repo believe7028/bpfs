@@ -19,6 +19,9 @@
 #include <sys/time.h>
 #include "pin.H"
 
+#include <utility>
+using std::pair;
+using std::make_pair;
 #if __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 4)
 # include <unordered_map>
 using std::unordered_map;
@@ -130,28 +133,29 @@ VOID LogBacktrace(CONTEXT *ctxt, VOID *rip, ADDRINT size)
 // Implementation of the checksum block cache API
 
 #if ENABLE_CHECKSUM_BLOCK_CACHE
-typedef unordered_map<uint64_t, uint64_t> block_checksum_map;
+// blockno -> (size, checksum)
+typedef unordered_map<uint64_t, pair<unsigned, uint64_t> > block_checksum_map;
 
 block_checksum_map bc_map;
 
 extern "C" {
 
-bool checksum_block_cache_get(uint64_t blockno, uint64_t *sum)
+bool checksum_block_cache_get(uint64_t blockno, unsigned size, uint64_t *sum)
 {
 	block_checksum_map::iterator it = bc_map.find(blockno);
 	assert(blockno != BPFS_BLOCKNO_INVALID);
-	if (it != bc_map.end())
+	if (it != bc_map.end() && it->second.first == size)
 	{
-		*sum = it->second;
+		*sum = it->second.second;
 		return true;
 	}
 	return false;
 }
 
-void checksum_block_cache_put(uint64_t blockno, uint64_t sum)
+void checksum_block_cache_put(uint64_t blockno, unsigned size, uint64_t sum)
 {
 	assert(blockno != BPFS_BLOCKNO_INVALID);
-	bc_map[blockno] = sum;
+	bc_map[blockno] = make_pair(size, sum);
 }
 
 }

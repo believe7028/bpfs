@@ -16,8 +16,8 @@ uint64_t checksum_fs(void);
 
 #if ENABLE_CHECKSUM_BLOCK_CACHE
 // Caller must provide these functions
-bool checksum_block_cache_get(uint64_t blockno, uint64_t *sum);
-void checksum_block_cache_put(uint64_t blockno, uint64_t sum);
+bool checksum_block_cache_get(uint64_t blockno, unsigned size, uint64_t *sum);
+void checksum_block_cache_put(uint64_t blockno, unsigned size, uint64_t sum);
 #endif
 
 #endif

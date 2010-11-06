@@ -3879,11 +3879,11 @@ static void init_fuse_ops(struct fuse_lowlevel_ops *fuse_ops)
 
 #if ENABLE_CHECKSUM_BLOCK_CACHE
 // Dummy cache fns. random checksum in BPFS does not use the cache for now.
-bool checksum_block_cache_get(uint64_t blockno, uint64_t *sum)
+bool checksum_block_cache_get(uint64_t blockno, unsigned size, uint64_t *sum)
 {
 	return false;
 }
-void checksum_block_cache_put(uint64_t blockno, uint64_t sum)
+void checksum_block_cache_put(uint64_t blockno, unsigned size, uint64_t sum)
 {
 }
 #endif
