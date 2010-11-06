@@ -89,8 +89,10 @@ static uint64_t checksum_ino(uint64_t sum, uint64_t ino)
 	// ignore nlinks (not persistent)
 	sum = checksum_byte(sum, (const uint8_t*) &inode->flags,
 	                    sizeof(inode->flags));
-	sum = checksum_byte(sum, (const uint8_t*) &inode->root.nbytes,
-	                    sizeof(inode->root.nbytes));
+	// Not directories because size can chage before the new entry is added
+	if (!BPFS_S_ISDIR(inode->mode))
+		sum = checksum_byte(sum, (const uint8_t*) &inode->root.nbytes,
+		                    sizeof(inode->root.nbytes));
 	// ignore [acm]time
 	sum = checksum_byte(sum, (const uint8_t*) &inode->mode,
 	                    sizeof(inode->mode));
