@@ -47,6 +47,10 @@ extern "C" {
 #define BPFS_COMMIT_START "random_checksum_start_op"
 #define BPFS_COMMIT_END "random_checksum_stop_op"
 
+// May be necessary for Pin (but is not on Linux pin 337300)
+// and protects against segfaults. However, bpfsatomic fails
+// to allocate >4GiB of mirrored BPRAM.
+#define MIRROR_BPRAM 0
 
 const void *bpram_start;
 const void *bpram_end;
@@ -662,11 +666,14 @@ VOID RecordMemWrite(ADDRINT size, CONTEXT *ctxt, VOID *rip)
 	if (PTRMW_addr_set && bpram_start <= addr && addr < bpram_end)
 	{
 		uint64_t off = (uint64_t)addr - (uint64_t)bpram_start;
+#if MIRROR_BPRAM
 		EXCEPTION_INFO ei;
 		size_t n;
+#endif
 
 		assert(off + size <= bpram_nbytes);
 
+#if MIRROR_BPRAM
 		n = PIN_SafeCopyEx(bpfs_mirror.bpram + off, addr, size, &ei);
 		if (n != size)
 		{
@@ -680,6 +687,7 @@ VOID RecordMemWrite(ADDRINT size, CONTEXT *ctxt, VOID *rip)
 			}
 		}
 		//xassert(n == size); // fails at end. why? OK?
+#endif
 
 #if ENABLE_CHECKSUM_BLOCK_CACHE
 		// Can remove the assert if invalidate each block:
@@ -756,6 +764,7 @@ VOID Fini(INT32 code, VOID *v)
 
 static void init_ephemeral_bpram()
 {
+#if MIRROR_BPRAM
 	void *bpram_void = bpfs_mirror.bpram; // convert &bpram to a void** without alias warn
 	int r;
 	assert(!bpfs_mirror.bpram);
@@ -768,6 +777,9 @@ static void init_ephemeral_bpram()
 	size_t n;
 	n = PIN_SafeCopyEx(bpfs_mirror.bpram, bpram_start, bpram_nbytes, &ei);
 	xassert(n == bpram_nbytes);
+#else
+	bpfs_mirror.bpram = (char*) bpram_start;
+#endif
 }
 
 VOID InformPinBpramBefore(ADDRINT addr, ADDRINT size)
