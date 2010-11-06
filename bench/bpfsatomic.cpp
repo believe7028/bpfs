@@ -55,7 +55,7 @@ UINT64 bpram_nbytes;
 UINT64 nbytes;
 
 KNOB<bool> KnobQuiet(KNOB_MODE_WRITEONCE, "pintool",
-	"q", "0", "Quiet (t/f)");
+	"q", "1", "Quiet (1/0)");
 
 KNOB<bool> KnobFirstBacktrace(KNOB_MODE_WRITEONCE, "pintool",
 	"b", "1", "Log backtrace of first op write (t/f)");
