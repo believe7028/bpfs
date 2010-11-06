@@ -36,6 +36,7 @@ static int callback_checksum_block(uint64_t blockoff, char *block,
 #endif
 
 	assert(!off);
+	assert(size <= BPFS_BLOCK_SIZE);
 
 #if !ENABLE_CHECKSUM_BLOCK_CACHE
 	*sum = checksum_byte(*sum, (const uint8_t*) block, size);
