@@ -543,20 +543,18 @@ public:
 			return true;
 
 		sum = timed_checksum_fs(NULL);
-		if (sum != prev)
+		if (!hope_next_set)
 		{
-		   if (!hope_next_set)
-		   {
-			  hope_next_set = true;
-			  hope_next = sum;
-			  if (changed_fs)
-				 *changed_fs = true;
-		   }
-		   else if (sum != hope_next)
-		   {
-			   return false;
-		   }
+			if (sum != prev)
+			{
+				hope_next_set = true;
+				hope_next = sum;
+				if (changed_fs)
+					*changed_fs = true;
+			}
 		}
+		else if (sum != hope_next)
+			return false;
 		return true;
 	}
 
