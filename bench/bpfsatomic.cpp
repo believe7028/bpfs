@@ -57,6 +57,9 @@ UINT64 nbytes;
 KNOB<bool> KnobQuiet(KNOB_MODE_WRITEONCE, "pintool",
 	"q", "0", "Quiet (t/f)");
 
+KNOB<bool> KnobFirstBacktrace(KNOB_MODE_WRITEONCE, "pintool",
+	"b", "1", "Log backtrace of first op write (t/f)");
+
 KNOB<UINT64> KnobOpMax(KNOB_MODE_WRITEONCE, "pintool",
 	"o", "1000", "Max number of file system operations between tests");
 
@@ -76,29 +79,70 @@ KNOB<UINT64> KnobWriteMax(KNOB_MODE_WRITEONCE, "pintool",
 # define REG_BP_ARCH REG_RBP
 #endif
 
+struct backtrace
+{
+	backtrace() { memset(ips, 0, sizeof(ips)); n = 0; }
+	backtrace(const backtrace &bt)
+	{
+		memcpy(ips, bt.ips, sizeof(ips));
+		n = bt.n;
+	}
+	backtrace& operator=(const backtrace &bt)
+	{
+		if (this != &bt)
+		{
+			memcpy(ips, bt.ips, sizeof(ips));
+			n = bt.n;
+		}
+		return *this;
+	}
+
+	void add(void *ip)
+	{
+		if (n < NBSTEPS)
+		{
+			ips[n++] = ip;
+		}
+	}
+
+	void reset()
+	{
+		n = 0;
+	}
+
+	int n;
+	void *ips[NBSTEPS];
+};
+
 struct stack_frame
 {
 	struct stack_frame *next;
 	void *ret;
 };
 
-VOID LogBacktrace(CONTEXT *ctxt, VOID *rip, ADDRINT size)
+void PrintBacktrace(const backtrace &bt)
+{
+	printf("backtrace:\n");
+	for (int i = 0; i < bt.n; i++)
+		printf("%p\n", bt.ips[i]);
+	printf("backtrace end.\n");
+}
+
+backtrace RecordBacktrace(CONTEXT *ctxt, VOID *rip, ADDRINT size)
 {
 	const char *btopt = "(Might this be because you are trying to backtrace optimized code?)";
 	struct stack_frame *fp = reinterpret_cast<struct stack_frame*>(PIN_GetContextReg(ctxt, REG_BP_ARCH));
 	struct stack_frame *last_fp = NULL;
-	int i = 0;
+	backtrace bt;
 
-	printf("backtrace:\n");
-
-	printf("%p\n", reinterpret_cast<void*>(PIN_GetContextReg(ctxt, REG_INST_PTR)));
+	bt.add(reinterpret_cast<void*>(PIN_GetContextReg(ctxt, REG_INST_PTR)));
 
 	// Normally rip contains numbers that are small and not in a function.
 	// But sometimes REG_INST_PTR (aka EIP) is bogus and rip is not.
 	if (rip)
-		printf("%p\n", rip);
+		bt.add(rip);
 
-	while (fp >= last_fp && i < NBSTEPS)
+	while (fp >= last_fp && bt.n < NBSTEPS)
 	{
 		void *ret;
 		size_t n;
@@ -107,25 +151,27 @@ VOID LogBacktrace(CONTEXT *ctxt, VOID *rip, ADDRINT size)
 		n = PIN_SafeCopyEx(&ret, &fp->ret, sizeof(ret), &ei);
 		if (!n)
 		{
-			printf("pin: stack trace failed at depth %d (read ret)\n", i);
+			printf("pin: stack trace failed at depth %d (read ret)\n", bt.n);
 			printf("%s\n", btopt);
 			printf("EI: \"%s\"\n", PIN_ExceptionToString(&ei).c_str());
 			break;
 		}
 		if (!ret)
 			break;
-		printf("%p\n", ret);
+		bt.add(ret);
 		last_fp = fp;
 
 		n = PIN_SafeCopyEx(&fp, &last_fp->next, sizeof(fp), &ei);
 		if (!n)
 		{
-			printf("pin: stack trace failed at depth %d (read next)\n", i);
+			printf("pin: stack trace failed at depth %d (read next)\n", bt.n);
 			printf("%s\n", btopt);
 			printf("EI: \"%s\"\n", PIN_ExceptionToString(&ei).c_str());
 			break;
 		}
 	}
+
+	return bt;
 }
 
 
@@ -536,6 +582,11 @@ public:
 			{
 				printf("pin: Non-atomic write. Detect at end of op \"%s\".\n",
 				       fn);
+				if (KnobFirstBacktrace.Value())
+				{
+					printf("backtrace of first write that noticed a fs change:\n");
+					PrintBacktrace(change_bt);
+				}
 				xassert(hope_next == sum);
 			}
 		}
@@ -554,10 +605,13 @@ public:
 
 		hope_next_set = false;
 		hope_next = 0;
+		change_bt.reset();
 	}
 
 	freq_fire fire_ops;
 	freq_fire fire_writes;
+
+	backtrace change_bt; // backtrace of first write to change the fs in the op
 
 private:
    	uint64_t timed_checksum_fs(struct timeval *len)
@@ -639,21 +693,22 @@ VOID RecordMemWrite(ADDRINT size, CONTEXT *ctxt, VOID *rip)
 		nbytes += size;
 
 		// Useful if checksum_fs() hits an error:
-		// LogBacktrace(ctxt, rip, size);
+		// PrintBacktrace(RecordBacktrace(ctxt, rip, size));
 		bool changed_fs;
 		bool passed = checksum->op_check(&changed_fs);
 		// Enable to also show the backtrace of the first change instruction:
-#if 0
-		if (changed_fs)
-		{
-			printf("pin: File system changed within the op.\n");
-			LogBacktrace(ctxt, rip, size);
-		}
-#endif
+		if (KnobFirstBacktrace.Value() && changed_fs)
+			checksum->change_bt = RecordBacktrace(ctxt, rip, size);
 		if (!passed)
 		{
 			printf("pin: Non-atomic write. Detected within the op.\n");
-			LogBacktrace(ctxt, rip, size);
+			if (KnobFirstBacktrace.Value())
+			{
+				printf("backtrace of first check that saw the fs change in this op:\n");
+				PrintBacktrace(checksum->change_bt);
+			}
+			printf("backtrace of this check:\n");
+			PrintBacktrace(RecordBacktrace(ctxt, rip, size));
 			xassert(0);
 		}
 	}
