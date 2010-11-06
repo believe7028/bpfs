@@ -173,6 +173,7 @@ static struct {
 	char *bpram;
 } bpfs_mirror;
 
+#if ENABLE_CHECKSUM_BLOCK_CACHE
 static uint64_t bpram_blockno(const void *x)
 {
 	const char *c = (const char*) x;
@@ -182,6 +183,7 @@ static uint64_t bpram_blockno(const void *x)
 	static_assert(BPFS_BLOCKNO_INVALID == 0);
 	return (((uintptr_t) (c - bpfs_mirror.bpram)) / BPFS_BLOCK_SIZE) + 1;
 }
+#endif
 
 extern "C" {
 
@@ -617,6 +619,9 @@ VOID RecordMemWrite(ADDRINT size, CONTEXT *ctxt, VOID *rip)
 		//xassert(n == size); // fails at end. why? OK?
 
 #if ENABLE_CHECKSUM_BLOCK_CACHE
+		// Can remove the assert if invalidate each block:
+		assert(bpram_blockno(bpfs_mirror.bpram + off)
+			   == bpram_blockno(bpfs_mirror.bpram + off + size - 1));
 		checksum_block_cache_invalidate(bpram_blockno(bpfs_mirror.bpram + off));
 #endif
 
