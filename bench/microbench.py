@@ -508,6 +508,7 @@ class filesystem_bpfs:
     _mount_overheads = { 'BPFS': 1 } # the valid field
     def __init__(self, megabytes):
         self.img = tempfile.NamedTemporaryFile()
+        #self.img = open('/tmp/tmpfs/img', 'w+')
         # NOTE: self.mnt should not be in ~/ so that gvfs does not readdir it
         self.mnt = tempfile.mkdtemp()
         self.proc = None
@@ -517,16 +518,17 @@ class filesystem_bpfs:
         if self.proc:
             self.unmount()
         os.rmdir(self.mnt)
+        #os.unlink(self.img.name)
     def format(self):
         subprocess.check_call(['./mkfs.bpfs', self.img.name], close_fds=True)
     def mount(self, pinfile=None, count=False):
         env = None
         if pinfile:
             env = os.environ
-            env['PINOPTS'] = '-b true -o ' + pinfile
+            env['TOOLOPTS'] = '-o 1 -w 1 -q 1'
         bin = './bpfs'
         if count:
-            bin = './bench/bpramcount'
+            bin = './bench/bpfsatomic'
         self._count = count
         self.proc = subprocess.Popen([bin, '-f', self.img.name, self.mnt],
                                       stdout=subprocess.PIPE,
@@ -615,9 +617,9 @@ class filesystem_kernel:
 
 def run(fs, benches, profile):
     for name, clz in benches:
-        pinfile = None
-        if profile:
-            pinfile = 'pin-' + name + '.log'
+        pinfile = True
+        #if profile:
+        #    pinfile = 'pin-' + name + '.log'
         sys.stdout.write('Benchmark ' + name + ': ')
         b = clz()
         b.mnt = fs.mnt
@@ -645,11 +647,11 @@ def run(fs, benches, profile):
         if cow_bytes != -1:
             sys.stdout.write(' (cow: ' + str(cow_bytes) + ' bytes in ' + str(cow_blocks) + ' blocks)')
         print ''
-        if profile:
+        #if profile:
             #subprocess.check_call(['cat'], stdin=open(pinfile))
-            subprocess.check_call(['./bench/parse_bpramcount'],
-                                  stdin=open(pinfile))
-            os.unlink(pinfile)
+            #subprocess.check_call(['./bench/parse_bpramcount'],
+            #                      stdin=open(pinfile))
+            #os.unlink(pinfile)
         sys.stdout.flush()
 
 def usage():

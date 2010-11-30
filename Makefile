@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -g
 # Remove debug checks:
-#CFLAGS += -DNDEBUG
+CFLAGS += -DNDEBUG
 # Enable optimizations:
 #CFLAGS += -O3 -march=native # GCC >4.4: -flto
 # Enable Nehalem optimizations (GCC 4.4 -march only knows up to Core2):
@@ -9,7 +9,7 @@ CFLAGS = -Wall -g
 # Enable gprof:
 #CFLAGS += -pg
 # To build bpfsatomic:
-#CFLAGS += -fPIC
+CFLAGS += -fPIC
 
 .PHONY: all clean
 
