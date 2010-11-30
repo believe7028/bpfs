@@ -1,0 +1,35 @@
+diff --git a/Makefile b/Makefile
+index fcf407a..39a6736 100644
+--- a/Makefile
++++ b/Makefile
+@@ -1,7 +1,7 @@
+ CC = gcc
+ CFLAGS = -Wall -g
+ # Remove debug checks:
+-#CFLAGS += -DNDEBUG
++CFLAGS += -DNDEBUG
+ # Enable optimizations:
+ #CFLAGS += -O3 -march=native # GCC >4.4: -flto
+ # Enable Nehalem optimizations (GCC 4.4 -march only knows up to Core2):
+diff --git a/bench/microbench.py b/bench/microbench.py
+index b78a492..6331e0a 100755
+--- a/bench/microbench.py
++++ b/bench/microbench.py
+@@ -507,7 +507,8 @@ class benchmarks:
+ class filesystem_bpfs:
+     _mount_overheads = { 'BPFS': 1 } # the valid field
+     def __init__(self, megabytes):
+-        self.img = tempfile.NamedTemporaryFile()
++        #self.img = tempfile.NamedTemporaryFile()
++        self.img = open('/tmp/tmpfs/img', 'w+')
+         # NOTE: self.mnt should not be in ~/ so that gvfs does not readdir it
+         self.mnt = tempfile.mkdtemp()
+         self.proc = None
+@@ -517,6 +518,7 @@ class filesystem_bpfs:
+         if self.proc:
+             self.unmount()
+         os.rmdir(self.mnt)
++        os.unlink(self.img.name)
+     def format(self):
+         subprocess.check_call(['./mkfs.bpfs', self.img.name], close_fds=True)
+     def mount(self, pinfile=None, count=False):
